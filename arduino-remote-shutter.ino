@@ -1,15 +1,15 @@
 #include <EEPROM.h>
 #include <TimerOne.h>
 #include <GroveEncoder.h>
-#include "TM1637.h"
+#include <TM1637.h>
 
-#define MODE            4 // Switch
-#define BUTTON_FOCUSING 5 // Button
+#define MODE            7 // Switch
+#define BUTTON_FOCUSING 6 // Button
 #define DIAL            0 // Encoder
 #define LED_FOCUS       2 // LED
-#define LED_SHUTTER     6 // LED
-#define SIGNAL_FOCUS    3 // LED
-#define SIGNAL_SHUTTER  7 // LED
+#define LED_SHUTTER     3 // LED
+#define SIGNAL_FOCUS    5 // LED
+#define SIGNAL_SHUTTER  4 // LED
 #define ON  true
 #define OFF false
 
@@ -28,7 +28,7 @@ volatile unsigned int focusingTime = 1;
 // シャッターインターバル
 unsigned int shutterIntervalTime = 2;
 // フォーカシング時間設定用ボタンの状態
-int buttonState = 0;
+int buttonState = LOW;
 
 // フォーカスボタン(シャッターボタン半押し)
 void setFocusButton(boolean focusButton) {
@@ -54,16 +54,24 @@ void setShutterButton(boolean shutterButton) {
 
 // Fire shutter
 void shutter() {
-  setFocusButton(ON);
-  for (int i = 0; i < focusingTime * 100; i++) delayMicroseconds(10000);
-  setShutterButton(ON);
-  delayMicroseconds(10000);
-  setShutterButton(OFF);
-  setFocusButton(OFF);
+  if (isTimerStarted && digitalRead(MODE) == HIGH) {
+    setFocusButton(ON);
+    for (int i = 1; i <= focusingTime * 10000; i++) {
+      delayMicroseconds(100);
+    }
+    setShutterButton(ON);
+    for (int i = 1; i <= 100; i++) {
+      delayMicroseconds(100);
+    }
+    setShutterButton(OFF);
+    setFocusButton(OFF);
+  } else {
+    Timer1.stop();
+  }
 }
 
 void displayTime(unsigned int focusingTime, unsigned int shutterIntervalTime) {
-  int8_t disp[] = {0x00, 0x00, 0x00, 0x00};
+  int8_t disp[] = { 0x00, 0x00, 0x00, 0x00 };
   disp[3] = shutterIntervalTime % 10;
   shutterIntervalTime /= 10;
   disp[2] = shutterIntervalTime % 10;
@@ -74,15 +82,21 @@ void displayTime(unsigned int focusingTime, unsigned int shutterIntervalTime) {
 }
 
 void setup() {
+  Serial.begin(9600);
   tm1637.set(BRIGHT_TYPICAL);
   tm1637.init();
+
   // ピン設定
-  pinMode(MODE,            INPUT);
+  pinMode(MODE, INPUT);
   pinMode(BUTTON_FOCUSING, INPUT);
-  pinMode(LED_FOCUS,       OUTPUT);
-  pinMode(LED_SHUTTER,     OUTPUT);
-  pinMode(SIGNAL_FOCUS,    OUTPUT);
-  pinMode(SIGNAL_SHUTTER,  OUTPUT);
+  pinMode(LED_FOCUS, OUTPUT);
+  pinMode(LED_SHUTTER, OUTPUT);
+  pinMode(SIGNAL_FOCUS, OUTPUT);
+  pinMode(SIGNAL_SHUTTER, OUTPUT);
+
+  isTimerStarted = false;
+  focusingTime = 2;
+  shutterIntervalTime = 4;
   displayTime(focusingTime, shutterIntervalTime);
 }
 
@@ -99,7 +113,6 @@ void loop() {
       Timer1.initialize(shutterIntervalTime * 1000000);
       Timer1.attachInterrupt(shutter);
       Timer1.start();
-
       isTimerStarted = true;
     }
   } else {
@@ -117,6 +130,7 @@ void loop() {
       shutterIntervalTime = newValue;
     }
     encoder.setValue(shutterIntervalTime);
+
     if (shutterIntervalTime <= focusingTime) {
       focusingTime = shutterIntervalTime - 1;
     }
@@ -126,7 +140,7 @@ void loop() {
       if (focusingTime >= shutterIntervalTime || focusingTime > 9) {
         focusingTime = 0;
       }
-      delay(10); //チャタリング防止
+      delay(10);  //チャタリング防止
     }
     buttonState = digitalRead(BUTTON_FOCUSING);
 
@@ -134,4 +148,3 @@ void loop() {
     isTimerStarted = false;
   }
 }
-
